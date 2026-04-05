@@ -4,7 +4,6 @@ import uuid
 import asyncio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-import yt_dlp
 
 from YUKIYTAPI.database.stats import init_db, add_download, get_stats
 
@@ -75,26 +74,52 @@ async def stream_music(request: Request, video_id: str, type: str = "audio", tok
     file_path = os.path.join(CACHE_DIR, f"{video_id}.{ext}")
 
     if not os.path.exists(file_path):
-        ydl_opts = {
-            'format': 'bestaudio/best' if type == "audio" else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': file_path,
-            'quiet': True,
-            # 🔥 YT-DLP SYNTAX FIX: Dictionary format
-            'js_runtimes': {'node': {}},
-            # 🔥 YOUTUBE JS CHALLENGE BYPASS 🔥
-            'remote_components': ['ejs:github'],
-            'cookiefile': COOKIES_FILE 
-        }
+        outtmpl = os.path.join(CACHE_DIR, f"{video_id}.%(ext)s")
+        
+        # 🔥 SUBPROCESS BRAHMASTRA: Direct CLI execution 🔥
         if type == "audio":
-            ydl_opts.update({
-                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-            })
-            
+            cmd = [
+                "yt-dlp",
+                "--cookies", COOKIES_FILE,
+                "--js-runtimes", "node",
+                "--remote-components", "ejs:github",
+                "-f", "bestaudio/best",
+                "-x", "--audio-format", "mp3", "--audio-quality", "192",
+                "-o", outtmpl,
+                "--quiet",
+                video_id
+            ]
+        else:
+            cmd = [
+                "yt-dlp",
+                "--cookies", COOKIES_FILE,
+                "--js-runtimes", "node",
+                "--remote-components", "ejs:github",
+                "-f", "(bestvideo[ext=mp4]+bestaudio[ext=m4a])/best[ext=mp4]/best",
+                "-o", outtmpl,
+                "--quiet",
+                video_id
+            ]
+
         try:
-            await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(ydl_opts).download([video_id]))
+            # API background mein same wahi shell command chalayega jo tu terminal pe chalata hai
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"CLI Error: {stderr.decode()}")
+                
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    
+            
     add_download()
-    return FileResponse(file_path, media_type="audio/mpeg" if type == "audio" else "video/mp4")
     
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="audio/mpeg" if type == "audio" else "video/mp4")
+    else:
+        raise HTTPException(status_code=500, detail="FFmpeg failed to create MP3")
+        
