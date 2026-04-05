@@ -38,12 +38,15 @@
 ## 🛠️ ᴇꜱꜱᴇɴᴛɪᴀʟ ᴘʀᴇʀᴇǫᴜɪꜱɪᴛᴇꜱ
 
 ʏᴏᴜʀ ꜱᴇʀᴠᴇʀ (ᴜʙᴜɴᴛᴜ/ᴅᴇʙɪᴀɴ ʀᴇᴄᴏᴍᴍᴇɴᴅᴇᴅ) ᴍᴜꜱᴛ ʜᴀᴠᴇ ᴛʜᴇꜱᴇ ᴄʀɪᴛɪᴄᴀʟ ᴘᴀᴄᴋᴀɢᴇꜱ ɪɴꜱᴛᴀʟʟᴇᴅ.
-
+steps 1 
 ```bash
 sudo apt update && sudo apt upgrade -y
 # Install Python, FFmpeg, Node.js, Tmux, etc.
 sudo apt install python3 python3-pip python3-venv ffmpeg nodejs npm tmux nano -y
 ```
+
+steps 2
+
 ```bash
 ⚙️ ᴅᴇᴛᴀɪʟᴇᴅ ɪɴꜱᴛᴀʟʟᴀᴛɪᴏɴ & ꜱᴇᴛᴜᴘ
 1. ᴘʀᴏᴊᴇᴄᴛ ᴅᴇᴘʟᴏʏᴍᴇɴᴛ
@@ -51,15 +54,22 @@ sudo apt install python3 python3-pip python3-venv ffmpeg nodejs npm tmux nano -y
 git clone [https://github.com/SUDEEPBOTS/YUKIYTAPI.git](https://github.com/SUDEEPBOTS/YUKIYTAPI.git)
 cd YUKIYTAPI
 ```
+steps3 
+
 ```bash
 # Create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate
 ```
+
+steps 4
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 pip install -U yt-dlp  # Ensure yt-dlp is latest
+
+```
 
 2. ᴄᴏɴꜰɪɢᴜʀᴀᴛɪᴏɴ (ᴄʀᴜᴄɪᴀʟ)
 ꜱᴛᴇᴘ 2.1: ᴀᴅᴅ ᴄᴏᴏᴋɪᴇꜱ
