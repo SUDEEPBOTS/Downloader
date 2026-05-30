@@ -1,0 +1,12 @@
+*.webm
+*.m4a
+myenv/
+YUKIYTAPI/saved/
+YUKIYTAPI/__pycache__/
+YUKIYTAPI/database/__pycache__/
+test_audio
+test2_audio
+*.mp4
+*.m4a
+*.tmp
+*.part
