@@ -48,13 +48,13 @@ check_os() {
 collect_config() {
     section "Configuration"
 
-    ask "GitHub repo URL (e.g. https://github.com/user/YUKIYTAPI):"
+    ask "GitHub repo URL [https://github.com/SUDEEPBOTS/Ytapi]:"
     read -r REPO_URL
-    [ -z "$REPO_URL" ] && error "Repo URL required."
+    REPO_URL="${REPO_URL:-https://github.com/SUDEEPBOTS/Ytapi}"
 
-    ask "Install directory [/opt/yukiytapi]:"
+    ask "Install directory [/root/Ytapi]:"
     read -r INSTALL_DIR
-    INSTALL_DIR="${INSTALL_DIR:-/opt/yukiytapi}"
+    INSTALL_DIR="${INSTALL_DIR:-/root/Ytapi}"
 
     ask "Port [8000]:"
     read -r API_PORT
