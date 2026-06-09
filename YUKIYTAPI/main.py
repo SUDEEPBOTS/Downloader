@@ -21,6 +21,7 @@ if __doc__ is None or "© 2026 ᴋᴀɪᴛᴏ | ʜᴇʟʟꜰɪʀᴇᴅᴇᴠꜱ.
     sys.exit(1)
 
 import os
+import re
 import time
 import uuid
 import asyncio
@@ -31,8 +32,8 @@ from YUKIYTAPI.database.stats import init_db, add_download, get_stats
 
 app = FastAPI(title="YUKI YT API")
 
-BASE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE_DIR   = os.path.join(BASE_DIR, "YUKIYTAPI", "saved")
+BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CACHE_DIR    = os.path.join(BASE_DIR, "YUKIYTAPI", "saved")
 COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -40,6 +41,58 @@ init_db()
 
 TOKENS     = {}
 START_TIME = time.time()
+
+# ─────────────────────────────────────────
+# HELPER: Extract video ID from any YT URL
+# ─────────────────────────────────────────
+def extract_video_id(url: str) -> str:
+    """
+    Handles all YouTube URL formats:
+      - Plain ID:          dQw4w9WgXcQ
+      - Standard:          https://youtube.com/watch?v=dQw4w9WgXcQ
+      - Short:             https://youtu.be/dQw4w9WgXcQ
+      - Shorts:            https://youtube.com/shorts/dQw4w9WgXcQ
+      - Embed:             https://youtube.com/embed/dQw4w9WgXcQ
+      - With extra params: ?v=ID&list=...&t=...
+    """
+    # Already a plain 11-char video ID
+    if re.match(r'^[a-zA-Z0-9_-]{11}$', url):
+        return url
+
+    patterns = [
+        r'(?:v=)([a-zA-Z0-9_-]{11})',       # ?v=ID  (standard / mobile)
+        r'youtu\.be/([a-zA-Z0-9_-]{11})',    # youtu.be/ID
+        r'/shorts/([a-zA-Z0-9_-]{11})',      # /shorts/ID
+        r'/embed/([a-zA-Z0-9_-]{11})',       # /embed/ID
+        r'/live/([a-zA-Z0-9_-]{11})',        # /live/ID
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+
+    # Fallback: return as-is (yt-dlp can handle full URLs too)
+    return url
+
+
+# ─────────────────────────────────────────
+# HELPER: Find cached file (any extension)
+# ─────────────────────────────────────────
+def find_cached_file(video_id: str, type: str) -> str | None:
+    """
+    yt-dlp may save as .m4a, .opus, .webm etc depending on availability.
+    Check all known extensions so we don't miss a valid cache hit.
+    """
+    if type == "audio":
+        exts = ["m4a", "opus", "webm", "mp3", "ogg"]
+    else:
+        exts = ["mp4", "mkv", "webm"]
+
+    for ext in exts:
+        path = os.path.join(CACHE_DIR, f"{video_id}.{ext}")
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+    return None
 
 
 # ─────────────────────────────────────────
@@ -89,12 +142,13 @@ async def api_stats(request: Request):
 # ─────────────────────────────────────────
 @app.get("/download")
 async def generate_token(request: Request, url: str, type: str = "audio"):
-    video_id   = url.split("v=")[-1].split("&")[0] if "v=" in url else url
+    # FIX: Proper video ID extraction from any URL format
+    video_id   = extract_video_id(url)
     yuki_token = f"YUKIMusic{uuid.uuid4().hex[:16]}YukiBots"
     TOKENS[yuki_token] = {
         "video_id": video_id,
         "type":     type,
-        "expires":  time.time() + 60,
+        "expires":  time.time() + 300,  # FIX: 5 min instead of 60s
     }
     return JSONResponse({
         "status":         "success",
@@ -128,20 +182,17 @@ async def stream_music(
 
     del TOKENS[actual_token]
 
-    # ── Cache hit → serve instantly ───────────────────────────────────────────
-    ext        = "m4a" if type == "audio" else "mp4"
-    cache_path = os.path.join(CACHE_DIR, f"{video_id}.{ext}")
-
-    if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
+    # ── Cache hit → serve instantly (FIX: checks all extensions) ─────────────
+    cached = find_cached_file(video_id, type)
+    if cached:
         add_download()
         return FileResponse(
-            cache_path,
+            cached,
             media_type="audio/mp4" if type == "audio" else "video/mp4",
         )
 
     # ── Cache miss → yt-dlp download to temp ──────────────────────────────────
-    tmp_path = os.path.join(CACHE_DIR, f"{video_id}.tmp.{ext}")
-    outtmpl  = os.path.join(CACHE_DIR, f"{video_id}.tmp.%(ext)s")
+    outtmpl = os.path.join(CACHE_DIR, f"{video_id}.tmp.%(ext)s")
 
     if type == "audio":
         cmd = [
@@ -194,8 +245,8 @@ async def stream_music(
     if not actual_tmp or not os.path.exists(actual_tmp):
         raise HTTPException(status_code=500, detail="Download failed — file not found")
 
-    actual_ext   = actual_tmp.rsplit(".", 1)[-1]
-    final_cache  = os.path.join(CACHE_DIR, f"{video_id}.{actual_ext}")
+    actual_ext  = actual_tmp.rsplit(".", 1)[-1]
+    final_cache = os.path.join(CACHE_DIR, f"{video_id}.{actual_ext}")
 
     add_download()
 
@@ -205,5 +256,5 @@ async def stream_music(
     return FileResponse(
         actual_tmp,
         media_type="audio/mp4" if type == "audio" else "video/mp4",
-        )
+    )
   
