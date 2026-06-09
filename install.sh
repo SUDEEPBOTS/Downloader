@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════
 #   ʏᴜᴋɪ ʏᴛ ᴀᴘɪ — ᴀᴜᴛᴏ ɪɴꜱᴛᴀʟʟᴇʀ
 #   © 2026 ᴋᴀɪᴛᴏ | ʜᴇʟʟꜰɪʀᴇᴅᴇᴠꜱ
-#   Usage: curl -fsSL https://yourdomain.com/install | bash
+#   Usage: sudo bash <(curl -fsSL https://raw.githubusercontent.com/SUDEEPBOTS/Ytapi/main/install.sh)
 # ═══════════════════════════════════════════════════════════════
 
 set -e
@@ -45,23 +45,25 @@ check_os() {
 }
 
 # ── Config prompts ────────────────────────────────────────────
+# FIX: All reads use </dev/tty so curl|bash pipe doesn't kill them
+#      || true prevents set -e from firing on EOF
 collect_config() {
     section "Configuration"
 
     ask "GitHub repo URL [https://github.com/SUDEEPBOTS/Ytapi]:"
-    read -r REPO_URL
+    read -r REPO_URL </dev/tty || true
     REPO_URL="${REPO_URL:-https://github.com/SUDEEPBOTS/Ytapi}"
 
     ask "Install directory [/root/Ytapi]:"
-    read -r INSTALL_DIR
+    read -r INSTALL_DIR </dev/tty || true
     INSTALL_DIR="${INSTALL_DIR:-/root/Ytapi}"
 
     ask "Port [8000]:"
-    read -r API_PORT
+    read -r API_PORT </dev/tty || true
     API_PORT="${API_PORT:-8000}"
 
     ask "Use Cloudflare Tunnel for public URL? [Y/n]:"
-    read -r USE_CF
+    read -r USE_CF </dev/tty || true
     USE_CF="${USE_CF:-Y}"
 
     echo ""
@@ -72,7 +74,7 @@ collect_config() {
     echo -e "   Cloudflare : ${BLD}$( [[ "$USE_CF" =~ ^[Yy]$ ]] && echo "Yes (temp tunnel)" || echo "No (localhost only)" )${RST}"
     echo ""
     ask "Proceed? [Y/n]:"
-    read -r CONFIRM
+    read -r CONFIRM </dev/tty || true
     [[ "$CONFIRM" =~ ^[Nn]$ ]] && error "Aborted."
 }
 
@@ -97,7 +99,6 @@ PYTHON_BIN=""
 install_python() {
     section "Python (3.10+)"
 
-    # Find best already-installed version (prefer highest)
     for ver in 3.13 3.12 3.11 3.10; do
         if command -v "python${ver}" &>/dev/null; then
             PYTHON_BIN="python${ver}"
@@ -106,7 +107,6 @@ install_python() {
         fi
     done
 
-    # Fallback: check generic python3
     if command -v python3 &>/dev/null; then
         PY_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
         PY_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)")
@@ -117,7 +117,6 @@ install_python() {
         fi
     fi
 
-    # Install 3.11 via deadsnakes
     warn "No Python 3.10+ found — installing 3.11 via deadsnakes PPA..."
     apt-get install -y -qq software-properties-common > /dev/null 2>&1
     add-apt-repository -y ppa:deadsnakes/ppa > /dev/null 2>&1
@@ -159,16 +158,24 @@ install_node() {
 }
 
 # ── Clone repo ────────────────────────────────────────────────
+# FIX: Agar directory already exist karti hai toh pehle delete karo,
+#      phir fresh clone. No stale venv/code issues.
 clone_repo() {
     section "Cloning Repository"
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        warn "$INSTALL_DIR exists — pulling latest..."
-        git -C "$INSTALL_DIR" pull > /dev/null 2>&1
-    else
-        info "Cloning → $INSTALL_DIR"
-        git clone "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+
+    if [ -d "$INSTALL_DIR" ]; then
+        warn "Found existing installation at $INSTALL_DIR — removing..."
+        # Stop any running services before deleting
+        tmux kill-session -t yukiytapi    2>/dev/null || true
+        tmux kill-session -t yukiytapi-cf 2>/dev/null || true
+        systemctl stop yukiytapi 2>/dev/null || true
+        rm -rf "$INSTALL_DIR"
+        success "Old installation removed"
     fi
-    success "Repo ready"
+
+    info "Cloning fresh → $INSTALL_DIR"
+    git clone "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+    success "Repo cloned fresh"
 }
 
 # ── Venv + pip deps ───────────────────────────────────────────
@@ -176,12 +183,8 @@ setup_venv() {
     section "Virtual Environment"
     cd "$INSTALL_DIR"
 
-    if [ ! -d "venv" ]; then
-        info "Creating venv with $PYTHON_BIN..."
-        $PYTHON_BIN -m venv venv
-    else
-        info "venv exists — reusing"
-    fi
+    info "Creating venv with $PYTHON_BIN..."
+    $PYTHON_BIN -m venv venv
 
     source venv/bin/activate
     pip install -q --upgrade pip
@@ -204,14 +207,10 @@ setup_env() {
     cd "$INSTALL_DIR"
     mkdir -p logs
 
-    if [ ! -f ".env" ]; then
-        cat > .env <<EOF
+    cat > .env <<EOF
 API_PORT=${API_PORT}
 EOF
-        success ".env created"
-    else
-        warn ".env exists — skipping"
-    fi
+    success ".env created"
 }
 
 # ── tmux session (API) ────────────────────────────────────────
@@ -228,7 +227,6 @@ setup_tmux() {
 
     success "tmux session 'yukiytapi' started"
 
-    # systemd for auto-restart on reboot
     cat > /etc/systemd/system/yukiytapi.service <<EOF
 [Unit]
 Description=YUKI YT API
@@ -263,7 +261,6 @@ setup_cloudflare() {
 
     section "Cloudflare Tunnel"
 
-    # Install cloudflared if needed
     if ! command -v cloudflared &>/dev/null; then
         info "Downloading cloudflared..."
         ARCH=$(uname -m)
@@ -281,17 +278,14 @@ setup_cloudflare() {
         success "cloudflared already installed"
     fi
 
-    # Kill old CF session if exists
     tmux kill-session -t yukiytapi-cf 2>/dev/null || true
 
-    # Start tunnel in separate tmux session, log to file
     CF_LOG="${INSTALL_DIR}/logs/cloudflare.log"
     tmux new-session -d -s yukiytapi-cf \
         "cloudflared tunnel --url http://localhost:${API_PORT} 2>&1 | tee ${CF_LOG}"
 
     success "Cloudflare Tunnel started in tmux session 'yukiytapi-cf'"
 
-    # Wait and extract URL from log
     info "Waiting for tunnel URL..."
     for i in $(seq 1 15); do
         sleep 2
@@ -352,8 +346,8 @@ case "\$1" in
 
   stop)
     _info "Stopping..."
-    tmux kill-session -t yukiytapi    2>/dev/null && _ok "API stopped"    || true
-    tmux kill-session -t yukiytapi-cf 2>/dev/null && _ok "CF tunnel stopped" || true
+    tmux kill-session -t yukiytapi    2>/dev/null && _ok "API stopped"        || true
+    tmux kill-session -t yukiytapi-cf 2>/dev/null && _ok "CF tunnel stopped"  || true
     ;;
 
   restart)
@@ -405,7 +399,7 @@ case "\$1" in
   uninstall)
     echo -e "\${YLW}  ⚠  This will remove YUKI YT API completely.\${RST}"
     echo -ne "\${YLW}  ?  Sure? [y/N]:\${RST} "
-    read -r CONFIRM
+    read -r CONFIRM </dev/tty || true
     [[ ! "\$CONFIRM" =~ ^[Yy]$ ]] && echo "Aborted." && exit 0
 
     _info "Stopping services..."
@@ -432,7 +426,7 @@ case "\$1" in
     echo -e "  \${CYN}ytapi stop\${RST}       — Stop API + tunnel"
     echo -e "  \${CYN}ytapi restart\${RST}    — Restart"
     echo -e "  \${CYN}ytapi status\${RST}     — Status check"
-    echo -e "  \${CYN}ytapi logs\${RST}       — Live log tail"
+    echo -e "  \${CYN}ytapi logs\${RST}       — Live logs"
     echo -e "  \${CYN}ytapi attach\${RST}     — Attach API tmux session"
     echo -e "  \${CYN}ytapi tunnel\${RST}     — Attach CF tunnel session"
     echo -e "  \${CYN}ytapi update\${RST}     — Pull + restart"
