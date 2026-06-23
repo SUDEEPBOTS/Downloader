@@ -4,4 +4,4 @@ https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
 #yt-dlp
 aiofiles
 aiohttp
-
+bgutil-ytdlp-pot-provider
