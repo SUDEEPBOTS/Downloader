@@ -1,0 +1,28 @@
+{
+  "name": "YUKI YT API",
+  "description": "FastAPI based high-performance YouTube audio & video downloader with smart caching.",
+  "logo": "https://telegra.ph/file/8e20f1b212f43fb294b43.jpg",
+  "keywords": [
+    "youtube",
+    "downloader",
+    "fastapi",
+    "api",
+    "ytdlp",
+    "streaming"
+  ],
+  "repository": "https://github.com/SUDEEPBOTS/Downloader",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    },
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}
